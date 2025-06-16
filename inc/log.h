@@ -11,7 +11,7 @@ void usageErr(const char *format, ...);
 #ifdef USE_DEBUG_LOGGING
 #define DEBUG_MSG(...)      dbgMsg(__FILE__, __LINE__, __func__, __VA_ARGS__)
 #define DEBUG_WARN(...)     dbgWarn(__FILE__, __LINE__, __func__, __VA_ARGS__)
-#define DEBUG_EXIT(...)     dbgMsg(__FILE__, __LINE__, __func__, __VA_ARGS__)
+#define DEBUG_EXIT(...)     dbgErrExit(__FILE__, __LINE__, __func__, __VA_ARGS__)
 #else
 #define DEBUG_MSG(...)
 #define DEBUG_WARN(...)
