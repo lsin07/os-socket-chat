@@ -1,0 +1,53 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdarg.h>
+
+void dbgMsg(const char *file, int line, const char *func, const char *format, ...)
+{
+    printf("[DEBUG] ");
+    printf("%s:%u: %s: ", file, line, func);
+    va_list argList;
+    va_start(argList, format);
+    vprintf(format, argList);
+    va_end(argList);
+}
+
+void dbgWarn(const char *file, int line, const char *func, const char *format, ...)
+{
+    fprintf(stderr, "[DEBUG WARNING] ");
+    fprintf(stderr, "%s:%u: %s: ", file, line, func);
+    va_list argList;
+    va_start(argList, format);
+    vfprintf(stderr, format, argList);
+    va_end(argList);
+}
+
+void sysErrExit(const char *msg)
+{
+    perror(msg);
+    exit(EXIT_FAILURE);
+}
+
+void usrErrExit(const char *format, ...)
+{
+    fprintf(stderr, "fatal: ");
+    va_list argList;
+
+    va_start(argList, format);
+    vfprintf(stderr, format, argList);
+    va_end(argList);
+
+    exit(EXIT_FAILURE);
+}
+
+void dbgErrExit(const char *file, int line, const char *func, const char *format, ...)
+{
+    fprintf(stderr, "[DEBUG] ");
+    fprintf(stderr, "%s:%u: %s: ", file, line, func);
+
+    va_list argList;
+    va_start(argList, format);
+    vfprintf(stderr, format, argList);
+    va_end(argList);
+    exit(EXIT_FAILURE);
+}
