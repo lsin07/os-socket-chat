@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -9,8 +10,23 @@
 #include "log.h"
 #include "main.h"
 
+static void sigpipe_handler([[maybe_unused]] int signo)
+{
+    printf("Connection closed from server.\n");
+    exit(EXIT_SUCCESS);
+}
+
 int main()
 {
+    struct sigaction sa;
+    sa.sa_handler = sigpipe_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    if (sigaction(SIGPIPE, &sa, NULL) == 1)
+    {
+        sysErrExit("sigaction");
+    }
+
     struct addrinfo hints;
     memset(&hints, 0, sizeof(struct addrinfo));
     hints.ai_canonname = NULL;
@@ -50,7 +66,7 @@ int main()
             {
                 DEBUG_MSG("socket fd %d connected sucessfully with server %s:%s\n", cfd, host, service);
             }
-            printf("Connected to server %s:%s.\n", host, service);
+            printf("Connected to server (%s, %s)\n", host, service);
             break;                              /* Success */
         }
 

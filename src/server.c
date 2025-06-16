@@ -6,12 +6,43 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <pthread.h>
 
 #include "log.h"
 #include "main.h"
 
 #define BACKLOG 50
 #define ADDRSTRLEN (NI_MAXHOST + NI_MAXSERV + 10)
+
+typedef struct _client_info_t
+{
+    int cfd;
+    char host[NI_MAXHOST];
+    char service[NI_MAXSERV];
+} client_info_t;
+
+static void *client_routine(void *arg)
+{
+    client_info_t *clinfo = (client_info_t *)arg;
+    char buf[MAX_LEN];
+    int cfd = clinfo->cfd;
+    char *host = clinfo->host;
+    char *service = clinfo->service;
+    
+    for (;;)
+    {
+        ssize_t readLen = read(cfd, buf, MAX_LEN);
+        if (readLen != MAX_LEN)
+        {
+            printf("Connection terminated from (%s, %s)\n", host, service);
+            break;
+        }
+        printf("Message from %s:%s: %s\n", host, service, buf);
+    }
+    
+    free(clinfo);
+    return NULL;
+}
 
 int main()
 {
@@ -95,6 +126,7 @@ int main()
     struct sockaddr_storage claddr;
     socklen_t addrlen;
     int cfd;
+    pthread_t tid;
 
     for (;;)
     {
@@ -117,17 +149,28 @@ int main()
         }
         printf("Connection from %s\n", addrStr);
 
-        for (;;)
+        client_info_t *info = malloc(sizeof(client_info_t));
+        if (info == NULL)
         {
-            char buf[MAX_LEN];
-            ssize_t readLen = read(cfd, buf, MAX_LEN);
-            if (readLen != MAX_LEN)
-            {
-                DEBUG_MSG("client %s:%s has terminated the connection or crashed.\n", host, service);
-                break;
-            }
-            printf("Message from %s:%s: %s\n", host, service, buf);
+            sysErrExit("malloc");
         }
+        info->cfd = cfd;
+        strncpy(info->host, host, sizeof(info->host));
+        strncpy(info->service, service, sizeof(info->service));
+
+        if (pthread_create(&tid, NULL, client_routine, (void *)info) != 0)
+        {
+            perror("pthread_create");
+            close(cfd);
+            free(info);
+            continue;
+        }
+        else
+        {
+            DEBUG_MSG("created new thread (tid: %lu) for client %s:%s\n", tid, host, service);
+        }
+        
+        pthread_detach(tid);
     }
 
     close(cfd);
