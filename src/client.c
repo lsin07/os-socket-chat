@@ -6,18 +6,79 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <pthread.h>
 
 #include "log.h"
 #include "main.h"
 
-static void sigpipe_handler([[maybe_unused]] int signo)
+static pthread_mutex_t console_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static void sigpipe_handler(int signo)
 {
-    printf("Connection closed from server.\n");
+    (void)signo;
+    printf("Connection closed by server.\n");
     exit(EXIT_SUCCESS);
 }
 
-int main()
+static void *recv_routine(void* args)
 {
+    int cfd = *(int *)args;
+    char buf[SERVER_MSG_BUF_LEN];
+
+    for (;;)
+    {
+        ssize_t readLen = read(cfd, buf, sizeof(buf));
+        if (readLen != SERVER_MSG_BUF_LEN)
+        {
+            usrErrExit("could not read from socket fd %d\n", cfd);
+        }
+        pthread_mutex_lock(&console_mutex);
+        printf("\r\033[2K%s>>> ", buf);
+        fflush(stdout);
+        pthread_mutex_unlock(&console_mutex);
+    }
+
+    return NULL;
+}
+
+static void *send_routine(void* args)
+{
+    int cfd = *(int *)args;
+    char buf[CLIENT_MSG_BUF_LEN];
+    for (;;)
+    {
+        pthread_mutex_lock(&console_mutex);
+        printf(">>> ");
+        fflush(stdout);
+        pthread_mutex_unlock(&console_mutex);
+        char *res = fgets(buf, sizeof(buf), stdin);
+        pthread_mutex_lock(&console_mutex);
+        printf("\033[1A\r\033[2K");
+        pthread_mutex_unlock(&console_mutex);
+        if (res != NULL)
+        {
+            if (buf[0] == '!')
+            {
+                break;
+            }
+            buf[strcspn(buf, "\n")] = '\0';
+            if (write(cfd, buf, sizeof(buf)) != CLIENT_MSG_BUF_LEN)
+            {
+                usrErrExit("could not write to socket fd %d\n", cfd);
+            }
+        }
+    }
+
+    return NULL;
+}
+
+int main(int argc, char *argv[])
+{
+    if (argc != 2 || strcmp(argv[1], "--help") == 0)
+    {
+        usageErr("%s server-host\n", argv[0]);
+    }
+
     struct sigaction sa;
     sa.sa_handler = sigpipe_handler;
     sigemptyset(&sa.sa_mask);
@@ -39,7 +100,7 @@ int main()
     char host[NI_MAXHOST];
     char service[NI_MAXSERV];
 
-    if (getaddrinfo("localhost", PORT_NUM, &hints, &result) != 0)
+    if (getaddrinfo(argv[1], PORT_NUM, &hints, &result) != 0)
     {
         sysErrExit("getaddrinfo");
     }
@@ -79,30 +140,25 @@ int main()
     {
         usrErrExit("Could not connect socket to any address\n");
     }
-    
+
     freeaddrinfo(result);
-    
-    char msg[MAX_LEN];
-    for (;;)
+
+    int *cfd_arg = (int *)malloc(sizeof(int));
+    *cfd_arg = cfd;
+    pthread_t sender_tid, reciever_tid;
+    if (pthread_create(&sender_tid, NULL, send_routine, (void *)cfd_arg) != 0)
     {
-        printf(">>> ");
-        fflush(stdout);
-        char *res = fgets(msg, MAX_LEN, stdin);
-        if (res != NULL)
-        {
-            if (msg[0] == '!')
-            {
-                break;
-            }
-            msg[strlen(msg) - 1] = '\0';
-            ssize_t len = write(cfd, msg, MAX_LEN);
-            if (len != MAX_LEN)
-            {
-                usrErrExit("could not write to socket fd %d\n", cfd);
-            }
-        }
+        sysErrExit("pthread_create");
+    }
+    if (pthread_create(&reciever_tid, NULL, recv_routine, (void *)cfd_arg) != 0)
+    {
+        sysErrExit("pthread_create");
     }
 
+    pthread_detach(reciever_tid);
+    pthread_join(sender_tid, NULL);
+
+    free(cfd_arg);
     close(cfd);
     return 0;
 }

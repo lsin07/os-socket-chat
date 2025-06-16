@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
-void dbgMsg(const char *file, int line, const char *func, const char *format, ...)
+void dbgMsg(const char *file, const int line, const char *func, const char *format, ...)
 {
     printf("[DEBUG] ");
     printf("%s:%u: %s: ", file, line, func);
@@ -12,7 +12,7 @@ void dbgMsg(const char *file, int line, const char *func, const char *format, ..
     va_end(argList);
 }
 
-void dbgWarn(const char *file, int line, const char *func, const char *format, ...)
+void dbgWarn(const char *file, const int line, const char *func, const char *format, ...)
 {
     fprintf(stderr, "[DEBUG WARNING] ");
     fprintf(stderr, "%s:%u: %s: ", file, line, func);
@@ -30,6 +30,7 @@ void sysErrExit(const char *msg)
 
 void usrErrExit(const char *format, ...)
 {
+    fflush(stdout);
     fprintf(stderr, "fatal: ");
     va_list argList;
 
@@ -37,11 +38,13 @@ void usrErrExit(const char *format, ...)
     vfprintf(stderr, format, argList);
     va_end(argList);
 
+    fflush(stderr);
     exit(EXIT_FAILURE);
 }
 
-void dbgErrExit(const char *file, int line, const char *func, const char *format, ...)
+void dbgErrExit(const char *file, const int line, const char *func, const char *format, ...)
 {
+    fflush(stdout);
     fprintf(stderr, "[DEBUG] ");
     fprintf(stderr, "%s:%u: %s: ", file, line, func);
 
@@ -49,5 +52,21 @@ void dbgErrExit(const char *file, int line, const char *func, const char *format
     va_start(argList, format);
     vfprintf(stderr, format, argList);
     va_end(argList);
+
+    fflush(stderr);
+    exit(EXIT_FAILURE);
+}
+
+void usageErr(const char *format, ...)
+{
+    fflush(stdout);
+    va_list argList;
+
+    fprintf(stderr, "Usage: ");
+    va_start(argList, format);
+    vfprintf(stderr, format, argList);
+    va_end(argList);
+
+    fflush(stderr);
     exit(EXIT_FAILURE);
 }

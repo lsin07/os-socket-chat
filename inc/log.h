@@ -3,9 +3,10 @@
 
 void sysErrExit(const char *msg);
 void usrErrExit(const char *format, ...);
-void dbgMsg(const char *file, int line, const char *func, const char *format, ...);
-void dbgWarn(const char *file, int line, const char *func, const char *format, ...);
-void dbgErrExit(const char *file, int line, const char *func, const char *format, ...);
+void dbgMsg(const char *file, const int line, const char *func, const char *format, ...);
+void dbgWarn(const char *file, const int line, const char *func, const char *format, ...);
+void dbgErrExit(const char *file, const int line, const char *func, const char *format, ...);
+void usageErr(const char *format, ...);
 
 #ifdef USE_DEBUG_LOGGING
 #define DEBUG_MSG(...)      dbgMsg(__FILE__, __LINE__, __func__, __VA_ARGS__)

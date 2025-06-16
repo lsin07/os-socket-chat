@@ -9,38 +9,69 @@
 #include <pthread.h>
 
 #include "log.h"
+#include "client_list.h"
 #include "main.h"
 
 #define BACKLOG 50
 #define ADDRSTRLEN (NI_MAXHOST + NI_MAXSERV + 10)
 
-typedef struct _client_info_t
-{
-    int cfd;
-    char host[NI_MAXHOST];
-    char service[NI_MAXSERV];
-} client_info_t;
+/* client linked list functions are not thread safe. protect them. */
+static pthread_mutex_t cllist_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-static void *client_routine(void *arg)
+/* make sure that the console logs are not being messed up. */
+static pthread_mutex_t console_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static void *service_routine(void *arg)
 {
     client_info_t *clinfo = (client_info_t *)arg;
-    char buf[MAX_LEN];
-    int cfd = clinfo->cfd;
+    pthread_mutex_lock(&cllist_mutex);
+    add_client(clinfo);
+    pthread_mutex_unlock(&cllist_mutex);
+
+    char strRecv[CLIENT_MSG_BUF_LEN];
+    char strSend[SERVER_MSG_BUF_LEN];
+    int cfd = clinfo->fd;
     char *host = clinfo->host;
     char *service = clinfo->service;
-    
-    for (;;)
+
+    while (read(cfd, strRecv, CLIENT_MSG_BUF_LEN) == CLIENT_MSG_BUF_LEN)
     {
-        ssize_t readLen = read(cfd, buf, MAX_LEN);
-        if (readLen != MAX_LEN)
+        snprintf(strSend, sizeof(strSend), "Message from %s:%s: %s\n", host, service, strRecv);
+        pthread_mutex_lock(&console_mutex);
+        printf("%s", strSend);
+        pthread_mutex_unlock(&console_mutex);
+
+        int rfd;
+        pthread_mutex_lock(&cllist_mutex);
+        client_t *client = get_cllist_head();
+        while (client != NULL)
         {
-            printf("Connection terminated from (%s, %s)\n", host, service);
-            break;
+            /* broadcast message to all clients: traverse client linked list and send message to each clients */
+            rfd = client->client_info->fd;
+            DEBUG_MSG("broadcasting message -- sending message to client %d\n", rfd);
+            ssize_t w = write(rfd, strSend, sizeof(strSend));
+            if (w != (ssize_t)(SERVER_MSG_BUF_LEN))
+            {
+                pthread_mutex_unlock(&cllist_mutex);
+                goto TERMINATE;
+            }
+            else
+            {
+                client = client->next;
+            }
         }
-        printf("Message from %s:%s: %s\n", host, service, buf);
+        pthread_mutex_unlock(&cllist_mutex);
     }
-    
+
+TERMINATE:
+    pthread_mutex_lock(&console_mutex);
+    printf("Client (fd %d) connection terminated from (%s, %s)\n", cfd, host, service);
+    pthread_mutex_unlock(&console_mutex);
+    pthread_mutex_lock(&cllist_mutex);
+    remove_client(clinfo);
+    pthread_mutex_unlock(&cllist_mutex);
     free(clinfo);
+    close(cfd);
     return NULL;
 }
 
@@ -51,7 +82,7 @@ int main()
         perror("signal");
         exit(EXIT_FAILURE);
     }
-    
+
     struct addrinfo hints;
     memset(&hints, 0, sizeof(struct addrinfo));
     hints.ai_canonname = NULL;
@@ -84,22 +115,20 @@ int main()
         }
         else
         {
-            DEBUG_MSG("socket created, fd: %d, ai_family: %d, ai_socktype: %d, ai_protocol: %d\n", \
-                lfd, rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+            DEBUG_MSG("socket created, ai_family: %d, ai_socktype: %d, ai_protocol: %d\n", \
+                rp->ai_family, rp->ai_socktype, rp->ai_protocol);
         }
-        
 
         if (setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) == -1)
         {
             sysErrExit("setsockopt");
         }
 
-        
         if (bind(lfd, rp->ai_addr, rp->ai_addrlen) == 0)
         {
             if (getnameinfo(rp->ai_addr, rp->ai_addrlen, host, NI_MAXHOST, service, NI_MAXSERV, 0) == 0)
             {
-                DEBUG_MSG("socket fd %d binded successfully with %s:%s\n", lfd, host, service);
+                DEBUG_MSG("listening socket fd %d binded successfully with %s:%s\n", lfd, host, service);
             }
             break;
         }
@@ -118,7 +147,7 @@ int main()
     }
     else
     {
-        DEBUG_MSG("listening socket fd %d\n", lfd);
+        printf("Server up (listening %s:%s)\n", host, service);
     }
 
     freeaddrinfo(result);
@@ -131,13 +160,17 @@ int main()
     for (;;)
     {
         addrlen = sizeof(struct sockaddr_storage);
-        DEBUG_MSG("waiting for client at socket fd %d...\n", lfd);
+        DEBUG_MSG("waiting for client...\n");
         cfd = accept(lfd, (struct sockaddr *)&claddr, &addrlen);
         if (cfd == -1)
         {
             perror("accept");
             continue;
-        }        
+        }
+        else
+        {
+            DEBUG_MSG("client accepted: fd %d\n", cfd);
+        }
 
         if (getnameinfo((struct sockaddr *)&claddr, addrlen, host, NI_MAXHOST, service, NI_MAXSERV, 0) == 0)
         {
@@ -147,18 +180,18 @@ int main()
         {
             snprintf(addrStr, ADDRSTRLEN, "(?UNKNOWN?)");
         }
-        printf("Connection from %s\n", addrStr);
+        printf("Client (fd %d) connected from %s\n", cfd, addrStr);
 
-        client_info_t *info = malloc(sizeof(client_info_t));
+        client_info_t *info = (client_info_t *)malloc(sizeof(client_info_t));
         if (info == NULL)
         {
             sysErrExit("malloc");
         }
-        info->cfd = cfd;
+        info->fd = cfd;
         strncpy(info->host, host, sizeof(info->host));
         strncpy(info->service, service, sizeof(info->service));
 
-        if (pthread_create(&tid, NULL, client_routine, (void *)info) != 0)
+        if (pthread_create(&tid, NULL, service_routine, (void *)info) != 0)
         {
             perror("pthread_create");
             close(cfd);
@@ -173,6 +206,5 @@ int main()
         pthread_detach(tid);
     }
 
-    close(cfd);
     return 0;
 }
