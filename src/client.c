@@ -52,9 +52,6 @@ static void *send_routine(void* args)
         fflush(stdout);
         pthread_mutex_unlock(&console_mutex);
         char *res = fgets(buf, sizeof(buf), stdin);
-        pthread_mutex_lock(&console_mutex);
-        printf("\033[1A\r\033[2K");
-        pthread_mutex_unlock(&console_mutex);
         if (res != NULL)
         {
             if (buf[0] == '!')
@@ -67,6 +64,10 @@ static void *send_routine(void* args)
                 usrErrExit("could not write to socket fd %d\n", cfd);
             }
         }
+        pthread_mutex_lock(&console_mutex);
+        printf("\033[1A\r\033[2K");
+        printf("\033[33mMessage sent: %s\033[0m\n", buf);
+        pthread_mutex_unlock(&console_mutex);
     }
 
     return NULL;

@@ -45,7 +45,7 @@ void usrErrExit(const char *format, ...)
 void dbgErrExit(const char *file, const int line, const char *func, const char *format, ...)
 {
     fflush(stdout);
-    fprintf(stderr, "[DEBUG] ");
+    fprintf(stderr, "[DEBUG FATAL] ");
     fprintf(stderr, "%s:%u: %s: ", file, line, func);
 
     va_list argList;

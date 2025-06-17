@@ -48,17 +48,17 @@ static void *service_routine(void *arg)
         {
             /* broadcast message to all clients: traverse client linked list and send message to each clients */
             rfd = client->client_info->fd;
-            DEBUG_MSG("broadcasting message -- sending message to client %d\n", rfd);
-            ssize_t w = write(rfd, strSend, sizeof(strSend));
-            if (w != (ssize_t)(SERVER_MSG_BUF_LEN))
+            if (rfd != cfd)
             {
-                pthread_mutex_unlock(&cllist_mutex);
-                goto TERMINATE;
+                DEBUG_MSG("broadcasting message -- sending message to client %d\n", rfd);
+                ssize_t w = write(rfd, strSend, sizeof(strSend));
+                if (w != (ssize_t)(SERVER_MSG_BUF_LEN))
+                {
+                    pthread_mutex_unlock(&cllist_mutex);
+                    goto TERMINATE;
+                }
             }
-            else
-            {
-                client = client->next;
-            }
+            client = client->next;
         }
         pthread_mutex_unlock(&cllist_mutex);
     }
